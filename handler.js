@@ -1,7 +1,19 @@
 const jwt = require('jsonwebtoken');
+const jwks = require('jwks-rsa');
 
 // Set in `enviroment` of serverless.yml
-const { AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET } = process.env;
+const { AUTH0_CLIENT_ID } = process.env;
+
+const jwksClient = jwks({
+  jwksUri: 'https://meiertech.eu.auth0.com/.well-known/jwks.json',
+});
+
+const getKey = (header, callback) => {
+  jwksClient.getSigningKey(header.kid, (err, key) => {
+    const signingKey = key.publicKey || key.rsaPublicKey;
+    callback(null, signingKey);
+  });
+};
 
 // Policy helper function
 const generatePolicy = (principalId, effect, resource) => {
@@ -37,11 +49,10 @@ module.exports.auth = (event, context, callback) => {
   const options = {
     audience: AUTH0_CLIENT_ID,
   };
-  // decode base64 secret. ref: http://bit.ly/2hA6CrO
-  const secret = Buffer.from(AUTH0_CLIENT_SECRET, 'base64');
   try {
-    jwt.verify(tokenValue, secret, options, (verifyError, decoded) => {
+    jwt.verify(tokenValue, getKey, options, (verifyError, decoded) => {
       if (verifyError) {
+        console.log('verifyError', verifyError)
         // 401 Unauthorized
         return callback('Unauthorized');
       }
@@ -51,33 +62,38 @@ module.exports.auth = (event, context, callback) => {
   } catch (err) {
     return callback('Unauthorized');
   }
-  return callback('Unauthorized');
 };
 
 // Public API
-module.exports.publicEndpoint = (event, context, callback) => callback(null, {
-  statusCode: 200,
-  headers: {
-    /* Required for CORS support to work */
-    'Access-Control-Allow-Origin': '*',
-    /* Required for cookies, authorization headers with HTTPS */
-    'Access-Control-Allow-Credentials': true,
-  },
-  body: JSON.stringify({
-    message: 'Hi ⊂◉‿◉つ from Public API',
-  }),
-});
+module.exports.publicEndpoint = (event, context, callback) => {
+  const { origin } = event.headers;
+  callback(null, {
+    statusCode: 200,
+    headers: {
+      /* Required for CORS support to work */
+      'Access-Control-Allow-Origin': origin,
+      /* Required for cookies, authorization headers with HTTPS */
+      'Access-Control-Allow-Credentials': true,
+    },
+    body: JSON.stringify({
+      message: 'Hi ⊂◉‿◉つ from Public API',
+    }),
+  });
+};
 
 // Private API
-module.exports.privateEndpoint = (event, context, callback) => callback(null, {
-  statusCode: 200,
-  headers: {
-    /* Required for CORS support to work */
-    'Access-Control-Allow-Origin': '*',
-    /* Required for cookies, authorization headers with HTTPS */
-    'Access-Control-Allow-Credentials': true,
-  },
-  body: JSON.stringify({
-    message: 'Hi ⊂◉‿◉つ from Private API. Only logged in users can see this',
-  }),
-});
+module.exports.privateEndpoint = (event, context, callback) => {
+  const { origin } = event.headers;
+  callback(null, {
+    statusCode: 200,
+    headers: {
+      /* Required for CORS support to work */
+      'Access-Control-Allow-Origin': origin,
+      /* Required for cookies, authorization headers with HTTPS */
+      'Access-Control-Allow-Credentials': true,
+    },
+    body: JSON.stringify({
+      message: 'Hi ⊂◉‿◉つ from Private API. Only logged in users can see this',
+    }),
+  });
+};
